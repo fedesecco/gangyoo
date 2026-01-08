@@ -1,28 +1,31 @@
-# Gangyoo Telegram Bot
+# Gangyoo
 
-Telegram bot built with grammy and Supabase.
+Gangyoo is a Telegram bot for group chats. It keeps a lightweight list of members,
+lets the group set a shared language (English or Italian), stores birthdays, and
+can randomly nominate someone for a task.
 
-## Setup
+## How to use it
 
-1. Create the Supabase tables using `supabase/schema.sql`.
-2. Copy `.env.example` to `.env` and set values.
-3. Install deps: `npm install`
-4. Run locally: `npm run dev`
+1. Add Gangyoo to your group chat.
+2. Each person should send a message in the group or type `/register` once so the
+   bot can save their profile (name, username, id).
+3. Optional: set the chat language with `/language` and pick from the buttons.
+4. Save your birthday with `/birthday 24/12/1991` or `/birthday 1991-12-24`.
+5. Use `/nominate` to pick a random member (including the requester).
 
 ## Commands
 
-- `/register` register the bot and store your profile
-- `/language <en|it|eng|ita>` set chat language
-- `/birthday <DD/MM/YYYY or YYYY-MM-DD>` store your birthday
+- `/register` save your profile in this chat
+- `/language` set the chat language with buttons
+- `/birthday <DD/MM/YYYY or YYYY-MM-DD>` save your birthday
 - `/nominate` pick a random member
 
-## Cloud Run (webhook)
+## Notes
 
-1. Deploy the container and set env vars:
-   - `TELEGRAM_BOT_TOKEN`
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_KEY`
-   - `WEBHOOK_URL` (your Cloud Run URL + a path, e.g. `https://.../webhook`)
-   - `WEBHOOK_SECRET` (optional, must match the webhook secret token)
-2. Cloud Run provides `PORT` automatically.
-3. The bot uses webhooks whenever `WEBHOOK_URL` is set; otherwise it uses long polling.
+- Telegram does not expose birthdays, so you must submit yours with `/birthday`.
+- If the bot does not see normal messages in a group, ask the admin to disable
+  Privacy Mode for the bot in BotFather.
+
+## Credits
+
+Created by Federico Secco (federico.secco7@gmail.com).

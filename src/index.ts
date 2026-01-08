@@ -1,4 +1,5 @@
-import { Bot, webhookCallback } from "grammy";
+import { Bot, type Context, webhookCallback } from "grammy";
+import { conversations, createConversation } from "@grammyjs/conversations";
 import { config } from "dotenv";
 import http from "node:http";
 import { createDb } from "./db.js";
@@ -9,9 +10,12 @@ import {
   normalizeLang,
   type Lang
 } from "./i18n.js";
-import type { BotContext, UserInput } from "./types.js";
+import type { BotContext, ConversationContext, UserInput } from "./types.js";
 import { registerBirthdayCommand } from "./commands/birthday.js";
-import { registerLanguageCommand } from "./commands/language.js";
+import {
+  createLanguageConversation,
+  registerLanguageCommand
+} from "./commands/language.js";
 import { registerNominateCommand } from "./commands/nominate.js";
 import { registerRegisterCommand } from "./commands/register.js";
 
@@ -66,11 +70,41 @@ async function setLang(chatId: number, lang: Lang) {
   langCache.set(chatId, lang);
 }
 
-async function useChatLocale(ctx: BotContext, chatId: number): Promise<Lang> {
+async function useChatLocale(
+  ctx: ConversationContext,
+  chatId: number
+): Promise<Lang> {
   const lang = await getLang(chatId);
   ctx.i18n.useLocale(lang);
   return lang;
 }
+
+const i18n = createI18n<Context>(async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return DEFAULT_LANG;
+  return getLang(chatId);
+});
+
+const i18nMiddleware = i18n.middleware();
+
+bot.use(
+  conversations<BotContext, ConversationContext>({
+    plugins: [i18nMiddleware]
+  })
+);
+
+const languageDeps = {
+  db,
+  ensureChatOnce,
+  initialLangFromUser,
+  useChatLocale,
+  setLang,
+  normalizeLang,
+  languageLabel
+};
+
+bot.use(createConversation(createLanguageConversation(languageDeps), "language"));
+bot.use(i18nMiddleware);
 
 bot.use(async (ctx, next) => {
   const chatId = ctx.chat?.id;
@@ -83,14 +117,6 @@ bot.use(async (ctx, next) => {
 
   await next();
 });
-
-const i18n = createI18n<BotContext>(async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return DEFAULT_LANG;
-  return getLang(chatId);
-});
-
-bot.use(i18n.middleware());
 
 bot.on("message", async (ctx, next) => {
   const chatId = ctx.chat?.id;
@@ -112,15 +138,7 @@ registerRegisterCommand(bot, {
   useChatLocale
 });
 
-registerLanguageCommand(bot, {
-  db,
-  ensureChatOnce,
-  initialLangFromUser,
-  useChatLocale,
-  setLang,
-  normalizeLang,
-  languageLabel
-});
+registerLanguageCommand(bot, languageDeps);
 
 registerBirthdayCommand(bot, {
   db,

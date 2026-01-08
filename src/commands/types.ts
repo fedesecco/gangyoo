@@ -1,4 +1,4 @@
-import type { BotContext, UserInput } from "../types.js";
+import type { ConversationContext, UserInput } from "../types.js";
 import type { DbClient } from "../db.js";
 import type { Lang } from "../i18n.js";
 
@@ -6,7 +6,7 @@ export type BaseCommandDeps = {
   db: DbClient;
   ensureChatOnce: (chatId: number, preferredLang: Lang) => Promise<void>;
   initialLangFromUser: (user?: UserInput) => Lang;
-  useChatLocale: (ctx: BotContext, chatId: number) => Promise<Lang>;
+  useChatLocale: (ctx: ConversationContext, chatId: number) => Promise<Lang>;
 };
 
 export type LanguageCommandDeps = BaseCommandDeps & {
