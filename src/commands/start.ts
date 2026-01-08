@@ -6,7 +6,7 @@ export function registerStartCommand(
   bot: Bot<BotContext>,
   deps: BaseCommandDeps
 ) {
-  bot.command("start", async (ctx) => {
+  bot.command("register", async (ctx) => {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
 

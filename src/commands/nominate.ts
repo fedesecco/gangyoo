@@ -28,17 +28,12 @@ export function registerNominateCommand(
     await deps.useChatLocale(ctx, chatId);
     const members = await deps.db.listMembers(chatId);
 
-    const requesterId = from?.id;
-    const candidates = requesterId
-      ? members.filter((member) => member.user_id !== requesterId)
-      : members;
-
-    if (candidates.length === 0) {
+    if (members.length === 0) {
       await ctx.reply(ctx.t("nominate_no_candidates"));
       return;
     }
 
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    const chosen = members[Math.floor(Math.random() * members.length)];
     await ctx.reply(ctx.t("nominate_result", { name: formatMemberName(chosen) }));
   });
 }

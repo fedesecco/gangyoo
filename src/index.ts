@@ -1,5 +1,6 @@
-import { Bot } from "grammy";
+import { Bot, webhookCallback } from "grammy";
 import { config } from "dotenv";
+import http from "node:http";
 import { createDb } from "./db.js";
 import {
   DEFAULT_LANG,
@@ -164,4 +165,52 @@ bot.catch((err) => {
   console.error("Bot error", err.error);
 });
 
-bot.start();
+async function startWebhookServer(webhookUrl: string, webhookSecret?: string) {
+  const url = new URL(webhookUrl);
+  const webhookPath = url.pathname === "" ? "/" : url.pathname;
+  const port = Number(process.env.PORT ?? "3000");
+
+  const handler = webhookCallback(
+    bot,
+    "http",
+    webhookSecret ? { secretToken: webhookSecret } : undefined
+  );
+
+  await bot.api.setWebhook(
+    webhookUrl,
+    webhookSecret ? { secret_token: webhookSecret } : undefined
+  );
+
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === webhookPath) {
+      void handler(req, res).catch((err) => {
+        console.error("Webhook error", err);
+      });
+      return;
+    }
+
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.end("ok");
+  });
+
+  server.listen(port, () => {
+    console.log(`Webhook listening on ${port}${webhookPath}`);
+  });
+}
+
+async function main() {
+  const webhookUrl = process.env.WEBHOOK_URL;
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+
+  if (webhookUrl) {
+    await startWebhookServer(webhookUrl, webhookSecret);
+  } else {
+    bot.start();
+  }
+}
+
+main().catch((err) => {
+  console.error("Startup error", err);
+  process.exit(1);
+});
