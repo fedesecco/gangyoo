@@ -8,3 +8,4 @@ birthday_invalid = Invalid date. Use DD/MM/YYYY or YYYY-MM-DD.
 birthday_saved = Birthday saved: { $date }.
 nominate_result = The Choosen One for this task is { $name }.
 nominate_no_candidates = I need at least one other member to nominate.
+loser_of_day = We have a loser of the day! It is { $name }.

@@ -18,6 +18,7 @@ import {
 } from "./commands/language.js";
 import { registerNominateCommand } from "./commands/nominate.js";
 import { registerRegisterCommand } from "./commands/register.js";
+import { getCronJob } from "./jobs/index.js";
 
 config();
 
@@ -187,6 +188,8 @@ async function startWebhookServer(webhookUrl: string, webhookSecret?: string) {
   const url = new URL(webhookUrl);
   const webhookPath = url.pathname === "" ? "/" : url.pathname;
   const port = Number(process.env.PORT ?? "3000");
+  const cronSecret = process.env.CRON_SECRET;
+  const cronPrefix = "/cron/";
 
   const handler = webhookCallback(
     bot,
@@ -199,11 +202,54 @@ async function startWebhookServer(webhookUrl: string, webhookSecret?: string) {
     webhookSecret ? { secret_token: webhookSecret } : undefined
   );
 
-  const server = http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === webhookPath) {
+  const server = http.createServer(async (req, res) => {
+    const requestUrl = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`
+    );
+    const pathname = requestUrl.pathname;
+
+    if (req.method === "POST" && pathname === webhookPath) {
       void handler(req, res).catch((err) => {
         console.error("Webhook error", err);
       });
+      return;
+    }
+
+    if (pathname.startsWith(cronPrefix)) {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.end("Method Not Allowed");
+        return;
+      }
+
+      const rawSecret = req.headers["x-cron-secret"];
+      const providedSecret = Array.isArray(rawSecret) ? rawSecret[0] : rawSecret;
+
+      if (cronSecret && providedSecret !== cronSecret) {
+        res.statusCode = 403;
+        res.end("Forbidden");
+        return;
+      }
+
+      const jobId = pathname.slice(cronPrefix.length);
+      const job = getCronJob(jobId);
+      if (!job) {
+        res.statusCode = 404;
+        res.end("Not Found");
+        return;
+      }
+
+      try {
+        await job.run({ bot, db, i18n });
+        res.statusCode = 204;
+        res.end();
+      } catch (error) {
+        console.error("Cron job error", error);
+        res.statusCode = 500;
+        res.end("Cron failed");
+      }
+
       return;
     }
 

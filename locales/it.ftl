@@ -8,3 +8,4 @@ birthday_invalid = Data non valida. Usa GG/MM/AAAA o AAAA-MM-GG.
 birthday_saved = Compleanno salvato: { $date }.
 nominate_result = Il prescelto per questo compito e' { $name }.
 nominate_no_candidates = Mi serve almeno un altro membro da nominare.
+loser_of_day = Abbiamo il perdente del giorno! E' { $name }.

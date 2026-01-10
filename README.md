@@ -25,6 +25,7 @@ can randomly nominate someone for a task.
 - Telegram does not expose birthdays, so you must submit yours with `/birthday`.
 - If the bot does not see normal messages in a group, ask the admin to disable
   Privacy Mode for the bot in BotFather.
+- Every day at 7:00 CET there is a 10% chance the bot announces a loser of the day.
 
 ## Credits
 
