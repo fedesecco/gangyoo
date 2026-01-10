@@ -1,31 +1,40 @@
 # Gangyoo
 
-Gangyoo is a Telegram bot for group chats. It keeps a lightweight list of members,
-lets the group set a shared language (English or Italian), stores birthdays, and
-can randomly nominate someone for a task.
+Gangyoo is a Telegram group bot that generates replies via OpenAI when it is
+mentioned. The prompt and command catalog live inside this repo so they can be
+versioned and updated alongside the code.
 
-## How to use it
+## How it works
 
-1. Add Gangyoo to your group chat.
-2. Each person should send a message in the group or type `/register` once so the
-   bot can save their profile (name, username, id).
-3. Optional: set the chat language with `/language` and pick from the buttons.
-4. Save your birthday with `/birthday 24/12/1991` or `/birthday 1991-12-24`.
-5. Use `/nominate` to pick a random member (including the requester).
+- The bot responds only when mentioned and only if the chat ID is whitelisted.
+- The system prompt lives in `src/ai/prompt.ts`.
+- Command keywords and example replies live in `src/ai/commands.ts`.
+- The AI returns JSON with `inferredCommand` and `responseText`, then the
+  backend can alter the message before sending it.
+- Cron jobs can call `generateCronReply` from `src/ai/index.ts` to get an
+  `{ inferredCommand, responseText }` object from structured payloads.
 
-## Commands
+## Setup
 
-- `/register` save your profile in this chat
-- `/language` set the chat language with buttons
-- `/birthday <DD/MM/YYYY or YYYY-MM-DD>` save your birthday
-- `/nominate` pick a random member
+1. Copy `.env.example` to `.env`.
+2. Set these required values:
+   - `TELEGRAM_BOT_TOKEN`
+   - `OPENAI_API_KEY`
+   - `ALLOWED_CHAT_IDS` (comma-separated chat IDs, e.g. `-100123, -100456`)
+3. Optional:
+   - `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
+   - `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (to resolve [random_user] using
+     stored chat members)
 
-## Notes
+## Usage
 
-- Telegram does not expose birthdays, so you must submit yours with `/birthday`.
-- If the bot does not see normal messages in a group, ask the admin to disable
-  Privacy Mode for the bot in BotFather.
+Mention the bot in a whitelisted group chat:
 
-## Credits
+- `@Gangyoo can you register me?`
+- `@Gangyoo nominate someone for today`
 
-Created by Federico Secco (federico.secco7@gmail.com).
+## Scripts
+
+- `npm run dev` start the bot in watch mode
+- `npm run build` compile TypeScript
+- `npm run start` run the compiled bot

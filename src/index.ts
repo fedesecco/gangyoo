@@ -1,181 +1,83 @@
 import { Bot, type Context, webhookCallback } from "grammy";
-import { conversations, createConversation } from "@grammyjs/conversations";
 import { config } from "dotenv";
 import http from "node:http";
-import { createDb } from "./db.js";
-import {
-  DEFAULT_LANG,
-  createI18n,
-  languageLabel,
-  normalizeLang,
-  type Lang
-} from "./i18n.js";
-import type { BotContext, ConversationContext, UserInput } from "./types.js";
-import { registerBirthdayCommand } from "./commands/birthday.js";
-import {
-  createLanguageConversation,
-  registerLanguageCommand
-} from "./commands/language.js";
-import { registerNominateCommand } from "./commands/nominate.js";
-import { registerRegisterCommand } from "./commands/register.js";
+import { generateChatReply, type AiReply } from "./ai/index.js";
+import { InferredCommand } from "./ai/commands.js";
+import { createDb, type ChatMemberRecord, type DbClient } from "./db.js";
+import type { BotContext } from "./types.js";
 
 config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
+const openAiKey = process.env.OPENAI_API_KEY;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
-if (!token || !supabaseUrl || !supabaseKey) {
-  throw new Error(
-    "Missing TELEGRAM_BOT_TOKEN, SUPABASE_URL, or SUPABASE_SERVICE_KEY in .env."
+if (!token || !openAiKey) {
+  throw new Error("Missing TELEGRAM_BOT_TOKEN or OPENAI_API_KEY in .env.");
+}
+
+const allowedChatIds = parseChatIdWhitelist(process.env.ALLOWED_CHAT_IDS);
+if (allowedChatIds.size === 0) {
+  console.warn(
+    "ALLOWED_CHAT_IDS is empty. The bot will ignore all incoming messages."
   );
 }
 
-const db = createDb(supabaseUrl, supabaseKey);
 const bot = new Bot<BotContext>(token);
-
-const langCache = new Map<number, Lang>();
+const db = createDbIfConfigured(supabaseUrl, supabaseKey);
 const ensuredChats = new Set<number>();
 
-function initialLangFromUser(user?: UserInput): Lang {
-  const code = user?.language_code?.toLowerCase() ?? "";
-  if (code.startsWith("it")) return "it";
-  return DEFAULT_LANG;
-}
-
-async function ensureChat(chatId: number, preferredLang: Lang) {
-  await db.ensureChat(chatId, preferredLang);
-  if (!langCache.has(chatId)) {
-    const stored = await db.getChatLanguage(chatId);
-    langCache.set(chatId, stored);
-  }
-}
-
-async function ensureChatOnce(chatId: number, preferredLang: Lang) {
-  if (ensuredChats.has(chatId)) return;
-  await ensureChat(chatId, preferredLang);
-  ensuredChats.add(chatId);
-}
-
-async function getLang(chatId: number): Promise<Lang> {
-  const cached = langCache.get(chatId);
-  if (cached) return cached;
-  const stored = await db.getChatLanguage(chatId);
-  langCache.set(chatId, stored);
-  return stored;
-}
-
-async function setLang(chatId: number, lang: Lang) {
-  await db.setChatLanguage(chatId, lang);
-  langCache.set(chatId, lang);
-}
-
-async function useChatLocale(
-  ctx: ConversationContext,
-  chatId: number
-): Promise<Lang> {
-  const lang = await getLang(chatId);
-  ctx.i18n.useLocale(lang);
-  return lang;
-}
-
-const i18n = createI18n<Context>(async (ctx) => {
+bot.on("message", async (ctx) => {
   const chatId = ctx.chat?.id;
-  if (!chatId) return DEFAULT_LANG;
-  return getLang(chatId);
-});
+  const from = ctx.from;
+  if (!chatId || !from || from.is_bot) return;
+  if (!allowedChatIds.has(chatId)) return;
 
-const i18nMiddleware = i18n.middleware();
+  const text = getMessageText(ctx);
+  if (!text) return;
 
-bot.use(
-  conversations<BotContext, ConversationContext>({
-    plugins: [i18nMiddleware]
-  })
-);
+  const botUsername = ctx.me?.username ?? bot.botInfo?.username;
+  if (!botUsername) return;
+  if (!isBotMentioned(text, botUsername)) return;
 
-const languageDeps = {
-  db,
-  ensureChatOnce,
-  initialLangFromUser,
-  useChatLocale,
-  setLang,
-  normalizeLang,
-  languageLabel
-};
+  const cleaned = stripBotMention(text, botUsername);
+  const normalized =
+    cleaned.trim().length > 0
+      ? cleaned.trim()
+      : "(user mentioned the bot without extra text)";
 
-bot.use(createConversation(createLanguageConversation(languageDeps), "language"));
-bot.use(i18nMiddleware);
+  try {
+    if (db) {
+      try {
+        await ensureChatOnce(db, chatId);
+        await db.upsertMember(chatId, from);
+      } catch (err) {
+        console.error("DB sync error", err);
+      }
+    }
 
-bot.use(async (ctx, next) => {
-  const chatId = ctx.chat?.id;
-  const from = ctx.from as UserInput | undefined;
+    const reply = await generateChatReply({
+      text: normalized,
+      chatId,
+      chatTitle: ctx.chat?.title,
+      userId: from.id,
+      userName: formatUserName(from),
+      botUsername
+    });
 
-  if (chatId && from && !from.is_bot) {
-    const preferredLang = initialLangFromUser(from);
-    await ensureChatOnce(chatId, preferredLang);
-  }
+    const responseText = (await applyCommandTransform(reply, ctx, db)).trim();
+    if (!responseText) {
+      await ctx.reply("Sorry, I couldn't generate a response for that.");
+      return;
+    }
 
-  await next();
-});
-
-bot.on("message", async (ctx, next) => {
-  const chatId = ctx.chat?.id;
-  const from = ctx.from as UserInput | undefined;
-
-  if (chatId && from && !from.is_bot) {
-    const preferredLang = initialLangFromUser(from);
-    await ensureChatOnce(chatId, preferredLang);
-    await db.upsertMember(chatId, from);
-  }
-
-  await next();
-});
-
-registerRegisterCommand(bot, {
-  db,
-  ensureChatOnce,
-  initialLangFromUser,
-  useChatLocale
-});
-
-registerLanguageCommand(bot, languageDeps);
-
-registerBirthdayCommand(bot, {
-  db,
-  ensureChatOnce,
-  initialLangFromUser,
-  useChatLocale
-});
-
-registerNominateCommand(bot, {
-  db,
-  ensureChatOnce,
-  initialLangFromUser,
-  useChatLocale
-});
-
-bot.on("message:new_chat_members", async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
-
-  const preferredLang = initialLangFromUser(ctx.from as UserInput);
-  await ensureChatOnce(chatId, preferredLang);
-
-  const members = ctx.message?.new_chat_members ?? [];
-  for (const member of members) {
-    if (member.is_bot) continue;
-    await db.upsertMember(chatId, member as UserInput);
-  }
-});
-
-bot.on("my_chat_member", async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
-
-  const status = ctx.myChatMember?.new_chat_member?.status;
-  if (status === "member" || status === "administrator") {
-    const preferredLang = initialLangFromUser(ctx.from as UserInput | undefined);
-    await ensureChatOnce(chatId, preferredLang);
+    await ctx.reply(responseText, {
+      reply_to_message_id: ctx.message?.message_id
+    });
+  } catch (err) {
+    console.error("OpenAI error", err);
+    await ctx.reply("Sorry, I ran into a problem while generating that.");
   }
 });
 
@@ -221,11 +123,119 @@ async function main() {
   const webhookUrl = process.env.WEBHOOK_URL;
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
+  await bot.init();
+
   if (webhookUrl) {
     await startWebhookServer(webhookUrl, webhookSecret);
   } else {
     bot.start();
   }
+}
+
+function createDbIfConfigured(
+  url?: string,
+  serviceKey?: string
+): DbClient | null {
+  if (!url || !serviceKey) return null;
+  return createDb(url, serviceKey);
+}
+
+async function ensureChatOnce(dbClient: DbClient, chatId: number) {
+  if (ensuredChats.has(chatId)) return;
+  await dbClient.ensureChat(chatId, "en");
+  ensuredChats.add(chatId);
+}
+
+async function applyCommandTransform(
+  reply: AiReply,
+  ctx: Context,
+  dbClient: DbClient | null
+): Promise<string> {
+  switch (reply.inferredCommand) {
+    case InferredCommand.Nominate:
+      return resolveNomination(reply.responseText, ctx, dbClient);
+    default:
+      return reply.responseText;
+  }
+}
+
+async function resolveNomination(
+  responseText: string,
+  ctx: Context,
+  dbClient: DbClient | null
+): Promise<string> {
+  if (!responseText) return responseText;
+  const placeholderRegex = /\[random_user\]/gi;
+  if (!placeholderRegex.test(responseText)) return responseText;
+
+  const replacement = await pickRandomMemberLabel(ctx, dbClient);
+  return responseText.replace(placeholderRegex, replacement);
+}
+
+async function pickRandomMemberLabel(
+  ctx: Context,
+  dbClient: DbClient | null
+): Promise<string> {
+  const chatId = ctx.chat?.id;
+  if (!chatId || !dbClient) {
+    return formatUserName(ctx.from) || "someone";
+  }
+
+  try {
+    const members = await dbClient.listMembers(chatId);
+    if (!members.length) {
+      return formatUserName(ctx.from) || "someone";
+    }
+
+    const selected = members[Math.floor(Math.random() * members.length)];
+    return formatMemberLabel(selected);
+  } catch (err) {
+    console.error("Nomination lookup failed", err);
+    return formatUserName(ctx.from) || "someone";
+  }
+}
+
+function formatMemberLabel(member: ChatMemberRecord): string {
+  if (member.username) return `@${member.username}`;
+  const fullName = [member.first_name, member.last_name]
+    .filter(Boolean)
+    .join(" ");
+  return fullName || "someone";
+}
+
+function parseChatIdWhitelist(raw?: string): Set<number> {
+  if (!raw) return new Set();
+  const ids = raw
+    .split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((entry) => Number.isFinite(entry));
+  return new Set(ids);
+}
+
+function getMessageText(ctx: Context): string | null {
+  return ctx.message?.text ?? ctx.message?.caption ?? null;
+}
+
+function isBotMentioned(text: string, username: string): boolean {
+  const handle = `@${username}`.toLowerCase();
+  return text.toLowerCase().includes(handle);
+}
+
+function stripBotMention(text: string, username: string): string {
+  const escaped = escapeRegex(username);
+  const pattern = new RegExp(`@${escaped}`, "gi");
+  return text.replace(pattern, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function formatUserName(user?: Context["from"]): string {
+  if (!user) return "";
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
+  if (fullName) return fullName;
+  return user.username ?? "";
 }
 
 main().catch((err) => {
