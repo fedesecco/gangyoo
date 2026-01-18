@@ -1,13 +1,13 @@
-import type { I18n } from "@grammyjs/i18n";
 import type { Bot } from "grammy";
 import type { ChatMemberRecord, ChatRecord, DbClient } from "../db.js";
 import { DEFAULT_LANG, isLang, type Lang } from "../i18n.js";
 import type { BotContext } from "../types.js";
+import type { I18n } from "@grammyjs/i18n";
 
 type JobDeps = {
   bot: Bot<BotContext>;
   db: DbClient;
-  i18n: I18n;
+  i18n: I18n<BotContext>;
 };
 
 function formatMemberName(member: ChatMemberRecord): string {

@@ -4,6 +4,7 @@ import http from "node:http";
 import { generateChatReply } from "./ai/index.js";
 import { executeAiCommand } from "./commands/index.js";
 import { createDb, type DbClient } from "./db.js";
+import { createI18n } from "./i18n.js";
 import type { BotContext } from "./types.js";
 import { getCronJob } from "./jobs/index.js";
 
@@ -28,7 +29,10 @@ if (allowedChatIds.size === 0) {
 }
 
 const bot = new Bot<BotContext>(token);
+const i18n = createI18n<BotContext>();
 const db = createDbIfConfigured(supabaseUrl, supabaseKey);
+
+bot.use(i18n.middleware());
 
 bot.on("message", async (ctx) => {
   console.log("onMessage");
@@ -136,6 +140,12 @@ async function startWebhookServer(webhookUrl: string, webhookSecret?: string) {
         return;
       }
 
+      if (!db) {
+        res.statusCode = 503;
+        res.end("Database not configured");
+        return;
+      }
+
       try {
         await job.run({ bot, db, i18n });
         res.statusCode = 204;
@@ -205,4 +215,3 @@ main().catch((err) => {
   console.error("Startup error", err);
   process.exit(1);
 });
-
