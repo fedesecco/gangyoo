@@ -1,23 +1,14 @@
-import type { Bot } from "grammy";
-import type { BotContext, UserInput } from "../types.js";
-import type { BaseCommandDeps } from "./types.js";
+import type { AiCommandHandler } from "./types.js";
+import { ensureChatAndMember } from "./utils.js";
 
-export function registerRegisterCommand(
-  bot: Bot<BotContext>,
-  deps: BaseCommandDeps
-) {
-  bot.command("register", async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
-
-    const preferredLang = deps.initialLangFromUser(ctx.from as UserInput);
-    await deps.ensureChatOnce(chatId, preferredLang);
-
-    if (ctx.from) {
-      await deps.db.upsertMember(chatId, ctx.from as UserInput);
-    }
-
-    await deps.useChatLocale(ctx, chatId);
-    await ctx.reply(ctx.t("welcome"));
-  });
-}
+export const handleRegisterCommand: AiCommandHandler = async (
+  reply,
+  { ctx, db }
+) => {
+  try {
+    await ensureChatAndMember(db, ctx);
+  } catch (err) {
+    console.error("Register sync error", err);
+  }
+  return reply.responseText;
+};

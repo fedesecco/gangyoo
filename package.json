@@ -1,14 +1,16 @@
 {
-  "name": "gangyoo",
-  "version": "0.1.0",
-  "description": "Telegram group bot for events and RSVPs",
+  "name": "skibidi-bot",
+  "version": "0.2.0",
+  "description": "Telegram group bot that generates replies via Google Gemini",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "node --loader ts-node/esm --watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "sethook": "node scripts/set-webhook.js",
+    "unsethook": "node scripts/unset-webhook.js"
   },
   "keywords": [
     "telegram",
@@ -19,13 +21,13 @@
   ],
   "author": "Federico Secco",
   "license": "MIT",
-  "homepage": "https://github.com/fedesecco/gangyoo#readme",
+  "homepage": "https://github.com/fedesecco/skibidi-bot#readme",
   "bugs": {
-    "url": "https://github.com/fedesecco/gangyoo/issues"
+    "url": "https://github.com/fedesecco/skibidi-bot/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fedesecco/gangyoo.git"
+    "url": "git+https://github.com/fedesecco/skibidi-bot.git"
   },
   "dependencies": {
     "@grammyjs/conversations": "^2.1.1",

@@ -15,6 +15,19 @@ export type ChatMemberRecord = {
   username: string | null;
 };
 
+export type ChatRecord = {
+  chat_id: number;
+  language: string;
+};
+
+type EventInput = {
+  chatId: number;
+  name: string;
+  eventDate: Date;
+  reminderDate?: Date | null;
+  participants?: unknown[];
+};
+
 export function createDb(url: string, serviceKey: string) {
   const supabase = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false }
@@ -96,13 +109,39 @@ export function createDb(url: string, serviceKey: string) {
     return data ?? [];
   }
 
+  async function listChats(): Promise<ChatRecord[]> {
+    const { data, error } = await supabase
+      .from("chats")
+      .select("chat_id, language");
+
+    if (error) throw error;
+
+    return data ?? [];
+  }
+
+  async function createEvent(input: EventInput) {
+    const { error } = await supabase.from("events").insert({
+      chat_id: input.chatId,
+      name: input.name,
+      event_date: input.eventDate.toISOString(),
+      reminder_date: input.reminderDate
+        ? input.reminderDate.toISOString()
+        : null,
+      participants: input.participants ?? []
+    });
+
+    if (error) throw error;
+  }
+
   return {
     ensureChat,
     getChatLanguage,
     setChatLanguage,
     upsertMember,
     setBirthday,
-    listMembers
+    listMembers,
+    listChats,
+    createEvent
   };
 }
 

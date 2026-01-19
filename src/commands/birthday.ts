@@ -1,6 +1,5 @@
-import type { Bot } from "grammy";
-import type { BotContext, UserInput } from "../types.js";
-import type { BaseCommandDeps } from "./types.js";
+import type { AiCommandHandler } from "./types.js";
+import { ensureChatAndMember } from "./utils.js";
 
 function parseBirthday(input: string): string | null {
   const trimmed = input.trim();
@@ -39,33 +38,24 @@ function isValidDate(year: number, month: number, day: number): boolean {
   );
 }
 
-export function registerBirthdayCommand(
-  bot: Bot<BotContext>,
-  deps: BaseCommandDeps
-) {
-  bot.command(["birthday", "bday"], async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId || !ctx.from) return;
-
-    const preferredLang = deps.initialLangFromUser(ctx.from as UserInput);
-    await deps.ensureChatOnce(chatId, preferredLang);
-
-    await deps.useChatLocale(ctx, chatId);
-    const arg = ctx.match?.trim();
-
-    if (!arg) {
-      await ctx.reply(ctx.t("birthday_help"));
-      return;
-    }
-
-    const birthday = parseBirthday(arg);
-    if (!birthday) {
-      await ctx.reply(ctx.t("birthday_invalid"));
-      return;
-    }
-
-    await deps.db.upsertMember(chatId, ctx.from as UserInput);
-    await deps.db.setBirthday(chatId, ctx.from.id, birthday);
-    await ctx.reply(ctx.t("birthday_saved", { date: birthday }));
-  });
+function extractBirthday(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return parseBirthday(value);
 }
+
+export const handleBirthdayCommand: AiCommandHandler = async (
+  reply,
+  { ctx, db }
+) => {
+  const birthday =
+    "birthday" in reply ? extractBirthday(reply.birthday) : null;
+  if (db && ctx.chat?.id && ctx.from && birthday) {
+    try {
+      await ensureChatAndMember(db, ctx);
+      await db.setBirthday(ctx.chat.id, ctx.from.id, birthday);
+    } catch (err) {
+      console.error("Birthday sync error", err);
+    }
+  }
+  return reply.responseText;
+};

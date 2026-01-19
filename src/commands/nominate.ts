@@ -1,39 +1,48 @@
-import type { Bot } from "grammy";
-import type { ChatMemberRecord } from "../db.js";
-import type { BotContext, UserInput } from "../types.js";
-import type { BaseCommandDeps } from "./types.js";
+import type { Context } from "grammy";
+import type { DbClient } from "../db.js";
+import type { AiCommandHandler } from "./types.js";
+import { ensureChatAndMember, formatMemberLabel, formatUserName } from "./utils.js";
 
-function formatMemberName(member: ChatMemberRecord): string {
-  const parts = [member.first_name, member.last_name].filter(
-    (value): value is string => Boolean(value)
-  );
+const PLACEHOLDER_REGEX = /\[random_user\]/gi;
+const PLACEHOLDER_TEST_REGEX = /\[random_user\]/i;
 
-  if (parts.length > 0) return parts.join(" ");
-  if (member.username) return `@${member.username}`;
-  return `user ${member.user_id}`;
-}
+export const handleNominateCommand: AiCommandHandler = async (
+  reply,
+  { ctx, db }
+) => {
+  const rawText = reply.responseText.trim();
+  const needsPick =
+    rawText.length === 0 || PLACEHOLDER_TEST_REGEX.test(rawText);
 
-export function registerNominateCommand(
-  bot: Bot<BotContext>,
-  deps: BaseCommandDeps
-) {
-  bot.command("nominate", async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
+  if (!needsPick) return rawText;
 
-    const from = ctx.from as UserInput | undefined;
-    const preferredLang = deps.initialLangFromUser(from);
-    await deps.ensureChatOnce(chatId, preferredLang);
+  const replacement = await pickRandomMemberLabel(ctx, db);
+  const baseText = rawText.length > 0 ? rawText : "[random_user]";
+  return baseText.replace(PLACEHOLDER_REGEX, replacement);
+};
 
-    await deps.useChatLocale(ctx, chatId);
-    const members = await deps.db.listMembers(chatId);
+async function pickRandomMemberLabel(
+  ctx: Context,
+  db: DbClient | null
+): Promise<string> {
+  const fallback = formatUserName(ctx.from) || "someone";
+  const chatId = ctx.chat?.id;
+  if (!db || !chatId) return fallback;
 
-    if (members.length === 0) {
-      await ctx.reply(ctx.t("nominate_no_candidates"));
-      return;
-    }
+  try {
+    await ensureChatAndMember(db, ctx);
+  } catch (err) {
+    console.error("Nomination sync error", err);
+    return fallback;
+  }
+  try {
+    const members = await db.listMembers(chatId);
+    if (!members.length) return fallback;
 
-    const chosen = members[Math.floor(Math.random() * members.length)];
-    await ctx.reply(ctx.t("nominate_result", { name: formatMemberName(chosen) }));
-  });
+    const selected = members[Math.floor(Math.random() * members.length)];
+    return formatMemberLabel(selected);
+  } catch (err) {
+    console.error("Nomination lookup failed", err);
+    return fallback;
+  }
 }
